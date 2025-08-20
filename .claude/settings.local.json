@@ -1,7 +1,17 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "Bash(npm install:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(claude mcp add:*)",
+      "Bash(npx:*)",
+      "Bash(npm search:*)",
+      "Bash(curl:*)",
+      "WebFetch(domain:www.npmjs.com)",
+      "Bash(set SUPABASE_ACCESS_TOKEN=sbp_81d99685a6809883eae141ee4f252855f1a0d445)",
+      "Bash(set SUPABASE_PROJECT_ID=rstyselykbbtanphsjxj)",
+      "Bash(mkdir:*)"
     ],
     "deny": [],
     "ask": []
