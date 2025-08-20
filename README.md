@@ -66,41 +66,20 @@ Add these redirect URLs in Supabase Authentication settings:
 OAuth providers:
 If you plan to use OAuth (Google/GitHub/Discord), enable providers in Supabase and configure their callback to /auth/callback.
 
-### Database migrations
+### Database Setup
 
-This repo includes a comprehensive migration for fresh installations:
-- `supabase/migrations/00000_initial_schema.sql`
+This repository includes a complete database schema for Supabase with user management, admin system, and app settings.
 
-To set up your database:
-1) Open the Supabase SQL Editor
-2) Paste the contents of `00000_initial_schema.sql`
-3) Run the migration
+**For detailed setup instructions, see [`supabase/README.md`](supabase/README.md)**
 
-What this migration creates:
-- All necessary tables (profiles, user_roles, user_api_keys, user_metadata, admin_audit_log, app_settings)
-- Row Level Security (RLS) policies for data protection
-- Foreign key constraints with CASCADE DELETE for proper data cleanup
-- Triggers for automation (user creation, updated_at timestamps)
-- Performance indexes
-- Default app settings
-
-For detailed migration instructions, demo user setup, and troubleshooting, see [`docs/MIGRATION.md`](docs/MIGRATION.md).
-
-Creating demo users (optional, for development):
-```sql
--- Create admin user
-SELECT auth.admin_create_user(
-  '{"email": "admin@example.com", "password": "Password01", "email_confirm": true}'
-);
-
--- Create regular user  
-SELECT auth.admin_create_user(
-  '{"email": "user@example.com", "password": "Password01", "email_confirm": true}'
-);
-
--- Promote admin
-UPDATE user_roles SET role = 'admin' WHERE email = 'admin@example.com';
-```
+Quick overview of what's included:
+- Complete database schema (`supabase/migrations/00000_initial_schema.sql`)
+- User management with roles (admin/user/moderator)
+- Admin dashboard with audit logging
+- App settings system for branding
+- Email configuration storage
+- Row Level Security (RLS) on all tables
+- Optional seed data for development (`supabase/seed.sql`)
 
 ## 4) Email configuration (Resend)
 
