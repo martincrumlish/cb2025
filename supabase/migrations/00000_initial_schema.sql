@@ -191,28 +191,14 @@ CREATE POLICY "Users can update their own profile" ON profiles
   FOR UPDATE USING (auth.uid() = id);
 
 -- User roles policies
+-- Allow users to view their own role
 CREATE POLICY "Users can view their own role" ON user_roles
   FOR SELECT USING (auth.uid() = user_id);
 
-CREATE POLICY "Admins can view all roles" ON user_roles
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM user_roles
-      WHERE user_id = auth.uid()
-      AND role = 'admin'
-      AND status = 'active'
-    )
-  );
-
-CREATE POLICY "Admins can manage roles" ON user_roles
-  FOR ALL USING (
-    EXISTS (
-      SELECT 1 FROM user_roles
-      WHERE user_id = auth.uid()
-      AND role = 'admin'
-      AND status = 'active'
-    )
-  );
+-- Service role bypass (for admin operations via API)
+-- Note: Service role automatically bypasses RLS, this is just for clarity
+CREATE POLICY "Service role full access" ON user_roles
+  FOR ALL USING (auth.jwt()->>'role' = 'service_role');
 
 -- User API keys policies
 CREATE POLICY "Users can manage their own API keys" ON user_api_keys
@@ -225,36 +211,16 @@ CREATE POLICY "Users can view their own metadata" ON user_metadata
 CREATE POLICY "Users can update their own metadata" ON user_metadata
   FOR UPDATE USING (auth.uid() = user_id);
 
-CREATE POLICY "Admins can view all metadata" ON user_metadata
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM user_roles
-      WHERE user_id = auth.uid()
-      AND role = 'admin'
-      AND status = 'active'
-    )
-  );
+-- Removed admin policy to prevent recursion
+-- Admin access should be handled at the application level
 
-CREATE POLICY "Admins can update all metadata" ON user_metadata
-  FOR UPDATE USING (
-    EXISTS (
-      SELECT 1 FROM user_roles
-      WHERE user_id = auth.uid()
-      AND role = 'admin'
-      AND status = 'active'
-    )
-  );
+-- Removed admin update policy to prevent recursion
 
 -- Admin audit log policies
-CREATE POLICY "Admins can view audit logs" ON admin_audit_log
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM user_roles
-      WHERE user_id = auth.uid()
-      AND role = 'admin'
-      AND status = 'active'
-    )
-  );
+-- Admin audit log policies
+-- Service role can view audit logs (admin operations use service role)
+CREATE POLICY "Service role can view audit logs" ON admin_audit_log
+  FOR SELECT USING (auth.jwt()->>'role' = 'service_role');
 
 CREATE POLICY "System can insert audit logs" ON admin_audit_log
   FOR INSERT WITH CHECK (true);
@@ -263,28 +229,30 @@ CREATE POLICY "System can insert audit logs" ON admin_audit_log
 CREATE POLICY "Public settings are viewable by everyone" ON app_settings
   FOR SELECT USING (is_public = true);
 
-CREATE POLICY "Admins can view all settings" ON app_settings
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM user_roles
-      WHERE user_id = auth.uid()
-      AND role = 'admin'
-      AND status = 'active'
-    )
-  );
+-- Authenticated users can view all settings
+CREATE POLICY "Authenticated users can view settings" ON app_settings
+  FOR SELECT USING (auth.uid() IS NOT NULL);
 
-CREATE POLICY "Admins can manage app settings" ON app_settings
-  FOR ALL USING (
-    EXISTS (
-      SELECT 1 FROM user_roles
-      WHERE user_id = auth.uid()
-      AND role = 'admin'
-      AND status = 'active'
-    )
-  );
+-- Service role can manage app settings
+CREATE POLICY "Service role can manage app settings" ON app_settings
+  FOR ALL USING (auth.jwt()->>'role' = 'service_role');
 
 -- =====================================================
--- 7. INSERT DEFAULT APP SETTINGS
+-- 7. GRANT PERMISSIONS TO ROLES
+-- =====================================================
+-- CRITICAL: Grant permissions to Supabase roles
+-- Without these, even service_role cannot access tables!
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
+
+-- Grant usage on sequences for auto-incrementing IDs
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
+
+-- =====================================================
+-- 8. INSERT DEFAULT APP SETTINGS
 -- =====================================================
 
 INSERT INTO app_settings (setting_key, setting_value, setting_type, description, is_public)
@@ -296,37 +264,34 @@ VALUES
 ON CONFLICT (setting_key) DO NOTHING;
 
 -- =====================================================
--- 8. CREATE DEMO USERS (Development Only)
+-- 8. HELPER FUNCTION FOR ROLE UPDATES
 -- =====================================================
--- NOTE: These should only be created in development environments
--- Run these commands separately after the migration if needed
+-- This function allows updating user roles, bypassing RLS
+-- Used by the setup script to promote admin users
+CREATE OR REPLACE FUNCTION public.update_user_role(
+  target_user_id UUID,
+  new_role TEXT
+)
+RETURNS BOOLEAN AS $$
+BEGIN
+  UPDATE public.user_roles
+  SET role = new_role
+  WHERE user_id = target_user_id;
+  
+  RETURN FOUND;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- To create demo users, run these commands in Supabase SQL Editor:
-/*
--- Create admin user
-SELECT auth.admin_create_user(
-  '{"email": "admin@example.com", "password": "Password01", "email_confirm": true}'
-);
+-- Grant execute permission to service role
+GRANT EXECUTE ON FUNCTION public.update_user_role TO service_role;
 
--- Create regular user
-SELECT auth.admin_create_user(
-  '{"email": "user@example.com", "password": "Password01", "email_confirm": true}'
-);
-
--- After users are created, update the admin's role:
-UPDATE user_roles 
-SET role = 'admin' 
-WHERE email = 'admin@example.com';
-
--- Optionally, update their profiles with display names:
-UPDATE profiles 
-SET full_name = 'Demo Admin' 
-WHERE email = 'admin@example.com';
-
-UPDATE profiles 
-SET full_name = 'Demo User' 
-WHERE email = 'user@example.com';
-*/
+-- =====================================================
+-- 9. DEMO USERS
+-- =====================================================
+-- Demo users cannot be created via SQL in Supabase.
+-- After running this migration, use the Node.js script:
+-- npm run setup:users
+-- This will create test users with proper authentication.
 
 -- =====================================================
 -- 9. GRANT PERMISSIONS (if needed)

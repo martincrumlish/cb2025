@@ -46,41 +46,31 @@ This migration will create:
 - Row Level Security (RLS) policies
 - Default app settings
 
-### Step 3: Create Demo Users (Optional - Development Only)
+### Step 3: Create Demo Users (Required for Development)
 
-For development and testing, you can create demo users:
+**Important**: Demo users cannot be created via SQL in Supabase. You must use the Supabase JavaScript SDK.
 
-1. In the SQL Editor, run the following commands:
+1. **Ensure your environment is configured**:
+   - Make sure `.env.local` contains:
+     - `VITE_SUPABASE_URL` - Your Supabase project URL
+     - `SUPABASE_SERVICE_ROLE_KEY` - Your service role key (required!)
 
-```sql
--- Create admin user
-SELECT auth.admin_create_user(
-  '{"email": "admin@example.com", "password": "Password01", "email_confirm": true}'
-);
+2. **Run the user creation script**:
+   ```bash
+   npm run setup:users
+   ```
 
--- Create regular user
-SELECT auth.admin_create_user(
-  '{"email": "user@example.com", "password": "Password01", "email_confirm": true}'
-);
-```
+   This script will:
+   - Create two test users (admin@example.com and user@example.com)
+   - Set proper roles (admin and user)
+   - Update display names in profiles
+   - Show you the credentials when complete
 
-2. After users are created, promote the admin:
+3. **Test User Credentials**:
+   - **Admin**: admin@example.com / Password01
+   - **User**: user@example.com / Password01
 
-```sql
--- Update admin role
-UPDATE user_roles 
-SET role = 'admin' 
-WHERE email = 'admin@example.com';
-
--- Add display names (optional)
-UPDATE profiles 
-SET full_name = 'Demo Admin' 
-WHERE email = 'admin@example.com';
-
-UPDATE profiles 
-SET full_name = 'Demo User' 
-WHERE email = 'user@example.com';
-```
+**Note**: The `auth.admin_create_user()` function shown in SQL examples is NOT a SQL function - it's a JavaScript SDK method. This is why the Node.js script is required.
 
 ### Step 4: Configure Authentication Settings
 
@@ -172,20 +162,35 @@ The schema uses CASCADE DELETE for user data:
 
 ### Common Issues
 
-1. **"Permission denied" errors**
-   - Ensure RLS policies are correctly applied
-   - Check that the user has the correct role
-   - Verify the service role key is set for admin operations
+1. **"function auth.admin_create_user does not exist" error**
+   - This is NOT a SQL function - it's a JavaScript SDK method
+   - Use `npm run setup:users` to create test users, not SQL commands
+   - Ensure your SUPABASE_SERVICE_ROLE_KEY is set in .env.local
 
-2. **Users not getting default roles**
+2. **"Permission denied" errors even with service role key**
+   - **CRITICAL**: The migration must include GRANT statements for table permissions
+   - By default, Supabase tables don't grant permissions to anon/authenticated/service_role
+   - The service role bypasses RLS but still needs basic table permissions
+   - If you get this error, run:
+     ```sql
+     GRANT ALL ON ALL TABLES IN SCHEMA public TO anon;
+     GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
+     GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
+     GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon;
+     GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+     GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
+     ```
+   - Our migration file already includes these GRANT statements
+
+3. **Users not getting default roles**
    - Check the `handle_new_user()` trigger is active
    - Verify the trigger is attached to `auth.users`
 
-3. **App settings not loading**
+4. **App settings not loading**
    - Ensure `is_public = true` for public settings
    - Check the `/api/app-settings` endpoint is accessible
 
-4. **Migration fails**
+5. **Migration fails**
    - Check for existing tables/constraints that might conflict
    - Review error messages in the SQL Editor
    - Ensure you're running the migration on a clean database

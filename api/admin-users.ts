@@ -74,6 +74,8 @@ export default async function handler(
 
     if (roleError) {
       console.error('Admin check error:', roleError)
+      console.error('Using service role?', !!supabaseAdmin)
+      console.error('Service key length:', supabaseServiceKey?.length)
       return res.status(403).json({ error: 'Admin access required - database error' })
     }
 

@@ -1,16 +1,16 @@
 {
   "mcpServers": {
-    "playwright": {
-      "command": "npx",
-      "args": ["-y", "@microsoft/mcp-server-playwright"]
-    },
-    "context7": {
-      "command": "npx",
-      "args": ["-y", "@context7/mcp-server"]
-    },
-    "shadcn-ui": {
-      "command": "npx",
-      "args": ["-y", "shadcn-ui-mcp-server"]
+    "supabase": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "@supabase/mcp-server-supabase",
+        "--project-ref=xxrlnwelfrvdshjrrxlu",
+        "--access-token=sbp_e218ca4c86c39b1bc1d6bc96eafcf52ce9581494"
+      ],
+      "env": {}
     }
   }
 }

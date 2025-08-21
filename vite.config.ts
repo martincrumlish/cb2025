@@ -7,6 +7,10 @@ import * as dotenv from 'dotenv';
 // Load .env.local file for API endpoints
 dotenv.config({ path: '.env.local' });
 
+// Make env vars globally available for SSR modules
+global.process = global.process || { env: {} };
+Object.assign(global.process.env, process.env);
+
 // API middleware plugin
 const apiPlugin = () => {
   return {

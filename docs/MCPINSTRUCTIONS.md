@@ -30,7 +30,7 @@ No manual installation required! The server runs via `npx` and downloads automat
    - Select your project
    - Navigate to Settings → API
    - Copy your `Project URL` (format: `https://[PROJECT_REF].supabase.co`)
-   - Extract the PROJECT_REF from the URL (e.g., `rstyselykbbtanphsjxj`)
+   - Extract the PROJECT_REF from the URL (e.g., `xxrlnwelfrvdshjrrxlu`)
    
 2. **Get your Personal Access Token:**
    - Go to [Supabase Account Tokens](https://supabase.com/dashboard/account/tokens)
@@ -39,26 +39,50 @@ No manual installation required! The server runs via `npx` and downloads automat
    - Copy the token (starts with `sbp_`)
    - **IMPORTANT:** Save this token immediately - you won't be able to see it again!
 
-3. **Add using Claude CLI (Recommended):**
+3. **For Windows Users - Add to Project Configuration (Recommended):**
 
-Run this command in your terminal:
+Create or update `.mcp.json` in your project root:
 
-```bash
-claude mcp add supabase \
-  --env SUPABASE_ACCESS_TOKEN=sbp_YOUR_ACCESS_TOKEN \
-  -- npx -y @supabase/mcp-server-supabase@latest \
-  --project-ref=YOUR_PROJECT_REF
+```json
+{
+  "mcpServers": {
+    "supabase": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "@supabase/mcp-server-supabase",
+        "--project-ref=YOUR_PROJECT_REF",
+        "--access-token=sbp_YOUR_ACCESS_TOKEN"
+      ],
+      "env": {}
+    }
+  }
+}
 ```
 
 Replace:
+- `YOUR_PROJECT_REF` with your project reference (e.g., `xxrlnwelfrvdshjrrxlu`)
 - `sbp_YOUR_ACCESS_TOKEN` with your actual token
-- `YOUR_PROJECT_REF` with your project reference
 
-This command automatically configures the Supabase MCP server in your Claude configuration.
+**Note:** On Windows, the `cmd /c npx` wrapper is required for proper execution.
+
+4. **Alternative - Using Claude CLI:**
+
+For Mac/Linux users or if you prefer global configuration:
+
+```bash
+claude mcp add supabase \
+  -- npx @supabase/mcp-server-supabase \
+  --project-ref=YOUR_PROJECT_REF \
+  --access-token=sbp_YOUR_ACCESS_TOKEN \
+  -s project
+```
 
 ### Example Values
-- **Project Reference:** `YOUR_PROJECT_REF` (e.g., `abc123xyz789`)
-- **Access Token:** `sbp_YOUR_ACCESS_TOKEN` (starts with `sbp_`)
+- **Project Reference:** `xxrlnwelfrvdshjrrxlu` (extract from your Supabase URL)
+- **Access Token:** `sbp_e218ca4c86c39b1bc1d6bc96eafcf52ce9581494` (starts with `sbp_`)
 
 ### Available Features
 - Database queries (read/write)
@@ -67,11 +91,19 @@ This command automatically configures the Supabase MCP server in your Claude con
 - Project information
 
 ### Troubleshooting
-- If the server doesn't connect, verify your access token is valid
+
+#### Windows-Specific Issues
+- **Environment variables not working:** On Windows, pass the access token directly as an argument instead of using environment variables
+- **Command not found:** Ensure you use `cmd /c npx` wrapper for Windows
+- **Failed to connect:** Check if there's a local configuration overriding project settings with `claude mcp get supabase`
+- **Multiple configurations:** Remove local config with `claude mcp remove supabase -s local` if needed
+
+#### General Issues
+- Verify your access token is valid and hasn't expired
 - Ensure your project reference is correct (no `https://` or `.supabase.co`)
-- After running the `claude mcp add` command, restart Claude Code
-- The server configuration is saved in your Claude settings, not in `.mcp.json`
-- You can verify the server is added by running `claude mcp list`
+- After modifying `.mcp.json`, restart Claude Code completely
+- Run `claude mcp list` to verify the server status shows "✓ Connected"
+- Check the exact package name is `@supabase/mcp-server-supabase` (not `@supabase/mcp-server`)
 
 ---
 
@@ -264,51 +296,66 @@ get_block({ blockName: "dashboard-01" })
 
 ## Complete Configuration
 
-### Using Claude CLI (Recommended)
+### For Windows Users - Project Configuration (Recommended)
+
+Create a `.mcp.json` file in your project root with all MCP servers:
+
+```json
+{
+  "mcpServers": {
+    "supabase": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "@supabase/mcp-server-supabase",
+        "--project-ref=YOUR_PROJECT_REF",
+        "--access-token=sbp_YOUR_ACCESS_TOKEN"
+      ],
+      "env": {}
+    },
+    "playwright": {
+      "command": "cmd",
+      "args": ["/c", "npx", "@executeautomation/playwright-mcp-server"]
+    },
+    "context7": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@upstash/context7-mcp"]
+    },
+    "shadcn-ui": {
+      "command": "cmd",
+      "args": ["/c", "npx", "shadcn-ui-mcp-server"]
+    }
+  }
+}
+```
+
+**Important for Windows:** All servers need the `cmd /c` wrapper for proper execution.
+
+### For Mac/Linux Users - Claude CLI Commands
 
 Install all MCP servers using Claude CLI commands:
 
 ```bash
 # Supabase
 claude mcp add supabase \
-  --env SUPABASE_ACCESS_TOKEN=sbp_YOUR_ACCESS_TOKEN \
-  -- npx -y @supabase/mcp-server-supabase@latest \
-  --project-ref=YOUR_PROJECT_REF
+  -- npx @supabase/mcp-server-supabase \
+  --project-ref=YOUR_PROJECT_REF \
+  --access-token=sbp_YOUR_ACCESS_TOKEN \
+  -s project
 
 # Playwright
-claude mcp add playwright -- npx -y @microsoft/mcp-server-playwright
+claude mcp add playwright -- npx @executeautomation/playwright-mcp-server -s project
 
 # Context7
-claude mcp add context7 -- npx -y @context7/mcp-server
+claude mcp add context7 -- npx -y @upstash/context7-mcp -s project
 
 # Shadcn UI
-claude mcp add shadcn-ui -- npx -y shadcn-ui-mcp-server
+claude mcp add shadcn-ui -- npx shadcn-ui-mcp-server -s project
 ```
 
-### Alternative: Manual `.mcp.json` Configuration
-
-If you prefer manual configuration, create a `.mcp.json` file:
-
-```json
-{
-  "mcpServers": {
-    "playwright": {
-      "command": "npx",
-      "args": ["-y", "@microsoft/mcp-server-playwright"]
-    },
-    "context7": {
-      "command": "npx",
-      "args": ["-y", "@context7/mcp-server"]
-    },
-    "shadcn-ui": {
-      "command": "npx",
-      "args": ["-y", "shadcn-ui-mcp-server"]
-    }
-  }
-}
-```
-
-**Note:** Supabase MCP works best when added via Claude CLI due to environment variable handling on different platforms.
+**Note:** The `-s project` flag adds servers to the project configuration (`.mcp.json`) instead of your personal configuration.
 
 ## Important Notes
 
