@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS public.user_roles (
   invitation_id UUID,
   invitation_sent_at TIMESTAMPTZ,
   expires_at TIMESTAMPTZ,
+  created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(user_id),
@@ -98,6 +99,7 @@ CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON user_roles(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_roles_email ON user_roles(email);
 CREATE INDEX IF NOT EXISTS idx_user_roles_status ON user_roles(status);
 CREATE INDEX IF NOT EXISTS idx_user_roles_role ON user_roles(role);
+CREATE INDEX IF NOT EXISTS idx_user_roles_created_by ON user_roles(created_by);
 CREATE INDEX IF NOT EXISTS idx_user_api_keys_user_id ON user_api_keys(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_metadata_user_id ON user_metadata(user_id);
 CREATE INDEX IF NOT EXISTS idx_admin_audit_log_admin_user_id ON admin_audit_log(admin_user_id);
@@ -119,7 +121,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Function to handle new user signup
+-- Function to handle new user signup (supports invitations)
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
 BEGIN
@@ -128,10 +130,30 @@ BEGIN
   VALUES (new.id, new.email, new.raw_user_meta_data->>'full_name')
   ON CONFLICT (id) DO NOTHING;
   
-  -- Create user role (default to 'user')
-  INSERT INTO public.user_roles (user_id, email, role, status)
-  VALUES (new.id, new.email, 'user', 'active')
-  ON CONFLICT (user_id) DO NOTHING;
+  -- Handle user role - either update existing invitation or create new record
+  -- Check if there's an existing invitation for this email
+  IF EXISTS (SELECT 1 FROM public.user_roles WHERE email = new.email AND status = 'invited') THEN
+    -- Update the existing invitation record with the new user_id
+    UPDATE public.user_roles 
+    SET 
+      user_id = new.id,
+      status = 'active',
+      updated_at = NOW()
+    WHERE email = new.email AND status = 'invited';
+    
+    -- Auto-confirm email for invitation signups (optional - remove if email confirmation is disabled)
+    UPDATE auth.users 
+    SET 
+      email_confirmed_at = NOW(),
+      confirmed_at = NOW(),
+      updated_at = NOW()
+    WHERE id = new.id;
+  ELSE
+    -- Create new user role for direct sign-ups (when allowed)
+    INSERT INTO public.user_roles (user_id, email, role, status)
+    VALUES (new.id, new.email, 'user', 'active')
+    ON CONFLICT (user_id) DO NOTHING;
+  END IF;
   
   -- Create empty user metadata
   INSERT INTO public.user_metadata (user_id)
@@ -194,6 +216,13 @@ CREATE POLICY "Users can update their own profile" ON profiles
 -- Allow users to view their own role
 CREATE POLICY "Users can view their own role" ON user_roles
   FOR SELECT USING (auth.uid() = user_id);
+
+-- Allow anyone to view pending invitations (needed for sign-up verification)
+CREATE POLICY "Anyone can view invitations" ON user_roles
+  FOR SELECT USING (
+    status = 'invited' 
+    AND invitation_id IS NOT NULL
+  );
 
 -- Service role bypass (for admin operations via API)
 -- Note: Service role automatically bypasses RLS, this is just for clarity

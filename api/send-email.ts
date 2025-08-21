@@ -4,12 +4,16 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error("Missing Supabase configuration. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY environment variables.")
 }
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Use service role key to bypass RLS when querying user settings
+const supabase = supabaseServiceKey 
+  ? createClient(supabaseUrl, supabaseServiceKey)
+  : createClient(supabaseUrl, supabaseAnonKey)
 
 interface EmailSettings {
   senderName: string

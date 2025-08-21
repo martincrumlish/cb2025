@@ -23,9 +23,13 @@ const supabaseAdmin = supabaseServiceKey
 
 interface AdminUsersRequest {
   adminUserId: string
-  action: 'getAllUsers' | 'updateUserRole' | 'deleteUser' | 'cancelInvitation'
+  action: 'getAllUsers' | 'updateUserRole' | 'deleteUser' | 'cancelInvitation' | 'createInvitation'
   targetUserId?: string
   invitationId?: string
+  invitationData?: {
+    email: string
+    role: 'admin' | 'user' | 'moderator'
+  }
   updates?: {
     role?: 'admin' | 'user' | 'moderator'
     status?: 'active' | 'suspended' | 'deleted' | 'cancelled'
@@ -53,7 +57,7 @@ export default async function handler(
   }
 
   try {
-    const { adminUserId, action, targetUserId, invitationId, updates } = req.body as AdminUsersRequest
+    const { adminUserId, action, targetUserId, invitationId, invitationData, updates } = req.body as AdminUsersRequest
 
     if (!adminUserId || !action) {
       return res.status(400).json({ error: 'Missing required fields: adminUserId and action' })
@@ -267,6 +271,60 @@ export default async function handler(
           })
 
         return res.status(200).json({ success: true })
+      }
+
+      case 'createInvitation': {
+        if (!invitationData?.email || !invitationData?.role) {
+          return res.status(400).json({ error: 'Missing invitation data' })
+        }
+
+        // Generate a UUID for the invitation
+        const invitationId = crypto.randomUUID()
+        
+        // Set expiration to 7 days from now
+        const expiresAt = new Date()
+        expiresAt.setDate(expiresAt.getDate() + 7)
+
+        // Create the invitation record using service role key to bypass RLS
+        const { data, error } = await supabaseAdmin
+          .from('user_roles')
+          .insert({
+            invitation_id: invitationId,
+            email: invitationData.email,
+            role: invitationData.role,
+            status: 'invited',
+            created_by: adminUserId,
+            expires_at: expiresAt.toISOString(),
+            invitation_sent_at: new Date().toISOString()
+          })
+          .select()
+          .single()
+
+        if (error) {
+          console.error('Failed to create invitation:', error)
+          return res.status(500).json({ error: error.message })
+        }
+
+        // Log the admin action (admin_email can be looked up via admin_user_id if needed)
+        await supabaseAdmin
+          .from('admin_audit_log')
+          .insert({
+            admin_user_id: adminUserId,
+            admin_email: '', // Can be populated via join when displaying logs
+            action: 'user_invited',
+            target_email: invitationData.email,
+            details: { 
+              role: invitationData.role,
+              invitationId,
+              expiresAt: expiresAt.toISOString()
+            }
+          })
+
+        return res.status(200).json({ 
+          success: true, 
+          invitationId,
+          data 
+        })
       }
 
       default:

@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, UserPlus } from 'lucide-react'
+import { Loader2, UserPlus, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
@@ -21,11 +21,12 @@ export function SignUpForm() {
   const [checkingInvitation, setCheckingInvitation] = useState(false)
 
   const invitationId = searchParams.get('invitation')
-  const invitedEmail = searchParams.get('email')
+  const invitedEmail = searchParams.get('email') ? decodeURIComponent(searchParams.get('email')!) : null
 
   useEffect(() => {
     // If we have an invitation ID, verify it and pre-fill the email
     if (invitationId && invitedEmail) {
+      console.log('Invitation detected:', { invitationId, invitedEmail })
       setCheckingInvitation(true)
       verifyInvitation()
     }
@@ -33,27 +34,62 @@ export function SignUpForm() {
 
   const verifyInvitation = async () => {
     try {
+      console.log('Starting verification for:', { 
+        invitationId, 
+        invitedEmail,
+        invitedEmailLength: invitedEmail?.length,
+        invitedEmailEncoded: encodeURIComponent(invitedEmail || '')
+      })
+      
+      // First, let's just query by invitation ID to see what's in the database
+      const { data: checkData, error: checkError } = await supabase
+        .from('user_roles')
+        .select('*')
+        .eq('invitation_id', invitationId)
+        .single()
+      
+      console.log('Check by invitation ID only:', { checkData, checkError })
+      
+      if (checkData) {
+        console.log('Database email vs URL email:', {
+          dbEmail: checkData.email,
+          urlEmail: invitedEmail,
+          match: checkData.email === invitedEmail
+        })
+      }
+      
       const { data, error } = await supabase
         .from('user_roles')
         .select('*')
         .eq('invitation_id', invitationId)
-        .eq('email', invitedEmail)
+        .eq('email', invitedEmail!)
         .eq('status', 'invited')
         .single()
+      
+      console.log('Query result:', { data, error })
 
       if (error || !data) {
+        console.error('Invitation query failed:', error?.message || 'No data returned')
         toast.error('Invalid or expired invitation')
+        setCheckingInvitation(false)
         return
       }
 
       // Check if invitation has expired
       if (data.expires_at && new Date(data.expires_at) < new Date()) {
+        console.log('Invitation expired check:', {
+          expires_at: data.expires_at,
+          now: new Date().toISOString(),
+          isExpired: new Date(data.expires_at) < new Date()
+        })
         toast.error('This invitation has expired')
+        setCheckingInvitation(false)
         return
       }
 
+      console.log('Setting invitation data:', data)
       setInvitationData(data)
-      setEmail(invitedEmail || '')
+      setEmail(invitedEmail!)
     } catch (error) {
       console.error('Error verifying invitation:', error)
       toast.error('Failed to verify invitation')
@@ -90,18 +126,10 @@ export function SignUpForm() {
 
         if (updateError) {
           console.error('Failed to update invitation status:', updateError)
-        } else {
-          // Also create user_metadata record for the new user
-          await supabase
-            .from('user_metadata')
-            .insert({
-              user_id: data.user.id,
-              status: 'active',
-              login_count: 0,
-              tags: [],
-              created_by: invitationData.created_by
-            })
         }
+        
+        // Note: user_metadata is created automatically by the handle_new_user() trigger
+        // No need to manually insert it here
       }
 
       toast.success(
@@ -129,18 +157,75 @@ export function SignUpForm() {
     )
   }
 
+  // Block sign-ups without valid invitation
+  if (!invitationId || !invitedEmail) {
+    return (
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle>Invitation Required</CardTitle>
+          <CardDescription>
+            Sign-ups are currently by invitation only.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              This application requires an invitation to join. Please contact an administrator to request access.
+            </AlertDescription>
+          </Alert>
+          <div className="mt-4">
+            <Link
+              to="/sign-in"
+              className="text-sm text-primary hover:underline"
+            >
+              Already have an account? Sign in
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // Also block if invitation verification failed
+  if (!checkingInvitation && !invitationData) {
+    return (
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle>Invalid Invitation</CardTitle>
+          <CardDescription>
+            The invitation link appears to be invalid or expired.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              This invitation may have expired or already been used. Please contact an administrator for a new invitation.
+            </AlertDescription>
+          </Alert>
+          <div className="mt-4">
+            <Link
+              to="/sign-in"
+              className="text-sm text-primary hover:underline"
+            >
+              Already have an account? Sign in
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
     <Card className="w-full max-w-md">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          {invitationData && <UserPlus className="h-5 w-5" />}
+          <UserPlus className="h-5 w-5" />
           Sign Up
         </CardTitle>
         <CardDescription>
-          {invitationData 
-            ? `You've been invited as ${invitationData.role}. Create your account below.`
-            : 'Create an account to get started'
-          }
+          You've been invited as {invitationData?.role}. Create your account below.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -154,15 +239,22 @@ export function SignUpForm() {
         )}
         <form onSubmit={handleSignUp} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">
+              Email
+              {invitationData && (
+                <span className="ml-2 text-xs text-muted-foreground">(locked to invitation)</span>
+              )}
+            </Label>
             <Input
               id="email"
               type="email"
               placeholder="you@example.com"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => !invitationData && setEmail(e.target.value)}
               required
               disabled={!!invitationData}
+              readOnly={!!invitationData}
+              className={invitationData ? "bg-muted cursor-not-allowed" : ""}
             />
           </div>
           <div className="space-y-2">

@@ -22,7 +22,8 @@
       "mcp__supabase__execute_sql",
       "Bash(taskkill:*)",
       "Bash(powershell:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "mcp__supabase__apply_migration"
     ],
     "deny": [],
     "ask": []

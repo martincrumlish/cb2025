@@ -169,32 +169,38 @@ export const createUserInvitation = async (
       .single()
     const organizationName = appSettings?.setting_value || 'our platform'
 
-    // Create a unique invitation ID
-    const invitationId = `inv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-    
-    // Set expiration to 7 days from now
-    const expiresAt = new Date()
-    expiresAt.setDate(expiresAt.getDate() + 7)
-
-    // Create the invitation record in the database
-    const { error } = await supabase
-      .from('user_roles')
-      .insert({
-        invitation_id: invitationId,
-        email: userData.email,
-        role: userData.role,
-        status: 'invited',
-        created_by: adminUserId,
-        expires_at: expiresAt.toISOString()
+    // Create the invitation through the admin API (uses service role to bypass RLS)
+    const response = await fetch('/api/admin-users', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        adminUserId,
+        action: 'createInvitation',
+        invitationData: {
+          email: userData.email,
+          role: userData.role
+        }
       })
+    })
 
-    if (error) {
-      return { success: false, error: error.message }
+    const result = await response.json()
+
+    if (!response.ok || !result.success) {
+      return { success: false, error: result.error || 'Failed to create invitation' }
     }
+
+    // Use the invitation ID returned from the API
+    const invitationId = result.invitationId
 
     // Generate the sign-up URL with the invitation ID
     const baseUrl = import.meta.env.VITE_APP_URL || window.location.origin
     const signUpUrl = `${baseUrl}/sign-up?invitation=${invitationId}&email=${encodeURIComponent(userData.email)}`
+
+    // Set expiration date for email (7 days from now)
+    const expiresAt = new Date()
+    expiresAt.setDate(expiresAt.getDate() + 7)
 
     // Send the invitation email
     const emailResult = await sendInvitationEmail(adminUserId, {

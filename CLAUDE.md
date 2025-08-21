@@ -143,16 +143,18 @@ The application implements a platform-agnostic email system that works locally a
 - **Service Provider**: Resend.com integration for reliable email delivery
 
 ### Email Configuration
-Required settings stored in database:
+Required settings stored in database (key-value pairs in `user_api_keys` table):
 - `sender_name`: Display name for outgoing emails
 - `sender_email`: From address (must match verified domain for production)
 - `resend_api_key`: Resend.com API key (starts with `re_`)
 - `sender_domain`: Optional custom domain for email sending
 
-**Important**: For production email delivery, the `sender_email` must use the same domain as `sender_domain`. For example, if `sender_domain` is "coursebuilder.ai", use an email like "admin@coursebuilder.ai".
+**Important Notes**:
+- For production email delivery, the `sender_email` must use the same domain as `sender_domain`. For example, if `sender_domain` is "coursebuilder.ai", use an email like "admin@coursebuilder.ai".
+- **Service Role Key Required**: The email API endpoint (`/api/send-email.ts`) MUST use the service role key to bypass RLS and read user email settings. This is configured automatically in the API endpoint.
 
 ### Key Files
-- `/api/send-email.ts` - Serverless email API function
+- `/api/send-email.ts` - Serverless email API function (uses service role key)
 - `src/lib/email.ts` - Client-side email functions and API calls
 - `src/pages/SettingsPage.tsx` - Email configuration UI
 - `src/lib/admin.ts` - Admin user management with email integration
@@ -230,11 +232,18 @@ The admin dashboard uses a **vertical tabbed interface** for better organization
   - **Confirmation Dialog**: Enhanced with detailed warnings about data loss
 
 ### Invitation System Implementation
-- **Database**: `user_roles` table stores invitations with `invitation_id`, `expires_at` fields
-- **Email Sending**: `src/lib/admin.ts:158-195` - `createUserInvitation` function sends emails
+- **Database**: `user_roles` table stores invitations with `invitation_id` (UUID), `expires_at`, `created_by` fields
+- **API Endpoint**: `/api/admin-users` with action `createInvitation` - Uses service role key to bypass RLS
+- **Email Sending**: `src/lib/admin.ts` - `createUserInvitation` function calls API and sends emails
+- **UUID Format**: Invitations use proper UUID format via `crypto.randomUUID()`
 - **Acceptance Flow**: `src/components/auth/SignUpForm.tsx` detects invitation parameters
 - **Email Templates**: `src/lib/email.ts:105-238` - HTML template for invitation emails
 - **URL Generation**: Invitations include signup link with invitation ID and email parameters
+- **Integration with Supabase Auth**: 
+  - Invitation created with status='invited'
+  - User signs up via Supabase Auth
+  - Invitation automatically linked to new user ID
+  - Status updated to 'active' upon successful registration
 
 ### Admin Routes
 - `/dashboard/admin` - Admin dashboard with tabbed interface
@@ -312,3 +321,51 @@ The settings page uses a **sidebar navigation** pattern with vertical tabs:
 - Update main page (`Index.tsx`) to showcase new components
 - Use existing shadcn/ui components extensively
 - All shadcn/ui and Radix UI dependencies are pre-installed
+
+## Database Migrations
+
+### Migration Files
+Located in `supabase/migrations/`:
+- `00000_initial_schema.sql` - Complete database setup with all tables, RLS policies, and triggers
+- `00001_update_app_settings_rls.sql` - RLS policy updates for app settings
+- `00002_user_deletion_cascade.sql` - CASCADE DELETE constraints for user data
+- `00003_add_created_by_to_user_roles.sql` - Adds `created_by` column for tracking invitation creators
+
+### Key Database Changes
+- **user_roles.created_by**: Added UUID column to track which admin created invitations
+- **CASCADE DELETE**: All user-related tables properly cascade delete when user is removed
+- **RLS Policies**: Service role key required for admin operations to bypass RLS
+
+## Troubleshooting
+
+### Common Issues and Solutions
+
+#### Email Settings Not Working
+**Problem**: "Email settings not configured" error even though settings are saved
+**Solution**: The email API endpoint uses service role key to bypass RLS. Ensure `SUPABASE_SERVICE_ROLE_KEY` is set in `.env.local`
+
+#### Invitation Creation Fails
+**Problem**: "new row violates row-level security policy for table user_roles"
+**Solution**: Admin operations must use the `/api/admin-users` endpoint which uses service role key to bypass RLS
+
+#### Invalid UUID Format
+**Problem**: "Invalid input syntax for type uuid: inv_..."
+**Solution**: Invitations must use proper UUID format. System now uses `crypto.randomUUID()` instead of custom format
+
+#### Missing created_by Column
+**Problem**: "Could not find the 'created_by' column of 'user_roles'"
+**Solution**: Run migration `00003_add_created_by_to_user_roles.sql` or the system will apply it automatically
+
+#### Email Domain Mismatch
+**Problem**: Resend API returns validation_error
+**Solution**: Either use sender email from the verified domain or remove the domain setting to use Resend's default
+
+### Testing Tools
+Test files in `tests/` directory:
+- `test-client-auth.js` - Verifies authenticated client access
+- `test-email-system.js` - Comprehensive email configuration tests
+- `test-invitation-api.js` - Tests invitation creation via API
+- `test-uuid-invitation.js` - Validates UUID format handling
+- `run-all-tests.js` - Runs complete test suite
+
+Run tests with: `node tests/[test-file].js`
