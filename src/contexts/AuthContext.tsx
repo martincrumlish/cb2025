@@ -20,7 +20,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
-  const [isAdmin, setIsAdmin] = useState(false)
+  // Initialize isAdmin from localStorage if available
+  const [isAdmin, setIsAdmin] = useState(() => {
+    const cached = localStorage.getItem('supabase.auth.isAdmin')
+    return cached === 'true'
+  })
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -29,7 +33,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('Initial session check, user:', session?.user?.email)
       setSession(session)
       setUser(session?.user ?? null)
-      await checkAdminStatus(session?.user?.id)
+      
+      if (session?.user?.id) {
+        // Check admin status without blocking
+        checkAdminStatus(session.user.id)
+      } else {
+        // Clear admin status if no user
+        setIsAdmin(false)
+        localStorage.removeItem('supabase.auth.isAdmin')
+      }
+      
       setLoading(false)
     })
 
@@ -42,10 +55,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false)  // Set loading to false immediately
         
         if (event === 'SIGNED_IN') {
-          await checkAdminStatus(session?.user?.id)
+          // Don't await - let it run in background
+          checkAdminStatus(session?.user?.id)
           navigate('/dashboard')
         } else if (event === 'SIGNED_OUT') {
           setIsAdmin(false)
+          localStorage.removeItem('supabase.auth.isAdmin')
           navigate('/')
         }
       }
@@ -60,29 +75,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!userId) {
       console.log('No userId provided, setting isAdmin to false')
       setIsAdmin(false)
+      localStorage.removeItem('supabase.auth.isAdmin')
       return
     }
 
     try {
-      // Add timeout to prevent hanging
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Query timeout after 3s')), 3000)
-      )
-      
-      // Simpler query - just fetch the user's role record
-      const queryPromise = supabase
+      // Just query directly without timeout - the query is fast
+      const { data, error } = await supabase
         .from('user_roles')
         .select('role, status')
         .eq('user_id', userId)
         .maybeSingle()  // Use maybeSingle to handle 0 or 1 records gracefully
-
-      const { data, error } = await Promise.race([
-        queryPromise,
-        timeoutPromise
-      ]).catch(err => {
-        console.error('Query failed or timed out:', err.message)
-        return { data: null, error: err }
-      }) as any
 
       console.log('Admin check query result:', { 
         data, 
@@ -96,9 +99,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const isAdminUser = !error && data?.role === 'admin' && data?.status === 'active'
       console.log('Setting isAdmin to:', isAdminUser)
       setIsAdmin(isAdminUser)
+      
+      // Cache the result in localStorage
+      localStorage.setItem('supabase.auth.isAdmin', isAdminUser.toString())
     } catch (err) {
       console.error('Error in checkAdminStatus:', err)
       setIsAdmin(false)
+      localStorage.removeItem('supabase.auth.isAdmin')
     }
   }
 
@@ -125,7 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       // Prefetch admin status immediately after successful sign-in
       if (!error && data?.user) {
-        await checkAdminStatus(data.user.id)
+        checkAdminStatus(data.user.id) // Don't await
       }
       
       return { data, error }
@@ -168,6 +175,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(null)
         setSession(null)
         setIsAdmin(false)
+        localStorage.removeItem('supabase.auth.isAdmin')
       } catch (error) {
         console.error('Sign out failed:', error)
         // Force clear local state even on error
@@ -176,6 +184,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsAdmin(false)
         // Clear local storage manually
         localStorage.removeItem('supabase.auth.token')
+        localStorage.removeItem('supabase.auth.isAdmin')
         // Don't rethrow - we want to handle this gracefully
       }
     }

@@ -59,6 +59,10 @@ This is a React + TypeScript + Vite application with Supabase authentication and
 - Password reset links redirect directly to `/auth/update-password`
 - Auth state changes handled via `onAuthStateChange` events
 - **Admin Check**: AuthContext checks user role on login and provides `isAdmin` state
+- **Admin Status Caching**: Admin status is cached in localStorage for instant display on page refresh
+  - Cached value used immediately on page load to prevent UI flicker
+  - Background verification happens without blocking navigation
+  - Cache cleared automatically on logout
 - **Hooks**: `useAdminPermissions` hook provides granular permission checks
 
 ### Layout System
@@ -184,10 +188,11 @@ Required settings stored in database (key-value pairs in `user_api_keys` table):
 - **Admin Detection**: Uses `AuthContext` to check user role from `user_roles` table
 - **Database Query**: Fetches user role with `maybeSingle()` to handle non-admin users gracefully
 - **Sidebar Display**: Admin link appears automatically when user has admin role
-- **Timeout Handling**: Queries include 3-second timeout to prevent hanging on database issues
-- **Prefetch Optimization**: Admin status is prefetched during sign-in to eliminate CLS (Cumulative Layout Shift)
-  - The `signIn` function in AuthContext now checks admin status immediately after authentication
-  - This prevents the Admin link from appearing with a delay, improving UX
+- **Performance Optimization**: Admin status check runs asynchronously without blocking navigation
+  - The `signIn` function triggers admin check but doesn't await it
+  - Navigation to dashboard happens immediately after successful authentication
+  - Admin status is cached in localStorage for instant display on subsequent page loads
+  - Eliminates both login delays and UI flicker on refresh
 
 ### Admin Dashboard Architecture
 The admin dashboard uses a **vertical tabbed interface** for better organization:
