@@ -7,8 +7,8 @@
         "/c",
         "npx",
         "@supabase/mcp-server-supabase",
-        "--project-ref=xxrlnwelfrvdshjrrxlu",
-        "--access-token=sbp_e218ca4c86c39b1bc1d6bc96eafcf52ce9581494"
+        "--project-ref=PROJECT",
+        "--access-token=ACCESSTOKENHERE"
       ],
       "env": {}
     }
