@@ -5,6 +5,7 @@ This guide will help you set up a new Supabase project using this boilerplate's 
 ## Prerequisites
 
 - A Supabase account ([sign up free](https://supabase.com))
+- Node.js installed locally
 - Your application code configured with Supabase credentials
 
 ## Quick Start
@@ -29,105 +30,70 @@ This guide will help you set up a new Supabase project using this boilerplate's 
 
 You should see "Success. No rows returned" - this means your schema is set up!
 
-### 3. Create Your First Admin User
-
-You need at least one admin user to access the admin dashboard.
-
-#### Option A: Create User via Dashboard (Recommended)
-
-1. Go to "Authentication" in the left sidebar
-2. Click "Users" tab
-3. Click "Add user" → "Create new user"
-4. Fill in:
-   - Email address
-   - Password
-   - Check "Auto Confirm Email"
-5. Click "Create user"
-6. Go to "SQL Editor" and run:
-   ```sql
-   UPDATE user_roles 
-   SET role = 'admin' 
-   WHERE email = 'your-email@example.com';
-   ```
-
-#### Option B: Create User via SQL (Faster)
-
-1. Go to "SQL Editor"
-2. Run this SQL (replace with your email/password):
-   ```sql
-   -- Create admin user
-   SELECT auth.admin_create_user(
-     '{"email": "admin@example.com", "password": "YourSecurePassword123!", "email_confirm": true}'
-   );
-
-   -- Make them admin
-   UPDATE user_roles 
-   SET role = 'admin' 
-   WHERE email = 'admin@example.com';
-   ```
-
-### 4. Get Your Project Credentials
+### 3. Get Your Project Credentials
 
 1. Click "Settings" (gear icon) in the left sidebar
 2. Click "API"
 3. Copy these values to your `.env.local` file:
    - `Project URL` → `VITE_SUPABASE_URL`
    - `anon public` key → `VITE_SUPABASE_ANON_KEY`
-   - `service_role secret` key → `SUPABASE_SERVICE_ROLE_KEY`
+   - `service_role secret` key → `SUPABASE_SERVICE_ROLE_KEY` (⚠️ Keep this secret!)
 
-### 5. (Optional) Add Demo Users
+### 4. Create Test Users
 
-If you want sample users for testing:
+After the migration is complete and your environment variables are set, create test users using the provided Node.js script:
 
-```sql
--- Create regular user
-SELECT auth.admin_create_user(
-  '{"email": "user@example.com", "password": "Password123!", "email_confirm": true}'
-);
-
--- Create moderator
-SELECT auth.admin_create_user(
-  '{"email": "moderator@example.com", "password": "Password123!", "email_confirm": true}'
-);
-
--- Set moderator role
-UPDATE user_roles 
-SET role = 'moderator' 
-WHERE email = 'moderator@example.com';
-
--- Optional: Add display names
-UPDATE profiles 
-SET full_name = 'Demo Admin' 
-WHERE email = 'admin@example.com';
-
-UPDATE profiles 
-SET full_name = 'Demo User' 
-WHERE email = 'user@example.com';
-
-UPDATE profiles 
-SET full_name = 'Demo Moderator' 
-WHERE email = 'moderator@example.com';
+```bash
+npm run setup:users
 ```
+
+This will create two test users:
+- **Admin**: `admin@example.com` / `Password01`
+- **User**: `user@example.com` / `Password01`
+
+The script uses the Supabase Admin API to properly create authenticated users with the correct roles.
+
+> **Note**: Users cannot be created directly via SQL in Supabase. The `npm run setup:users` script handles the proper authentication setup.
+
+### 5. (Optional) Additional Demo Data
+
+If you want more sample data for testing, you can run the `seed.sql` file:
+
+1. Go to SQL Editor
+2. Copy contents of `supabase/seed.sql`
+3. Paste and run
+
+This adds sample metadata, API keys, and audit logs to the test users.
 
 ## Verify Your Setup
 
-1. Check that tables were created:
+1. **Check tables were created:**
    - Go to "Table Editor" in sidebar
    - You should see: `profiles`, `user_roles`, `user_api_keys`, `user_metadata`, `admin_audit_log`, `app_settings`
 
-2. Check that your admin user works:
-   - Sign in to your application with the admin credentials
+2. **Check test users were created:**
+   - Go to "Authentication" → "Users"
+   - You should see both test users with confirmed emails
+
+3. **Test sign in:**
+   - Start your app: `npm run dev`
+   - Sign in with `admin@example.com` / `Password01`
    - You should see the "Admin" link in the dashboard sidebar
 
 ## What Gets Created
 
-This schema creates:
+### By Supabase (automatic):
+- `auth.users` table and authentication system
+- JWT token handling
+- Password reset and email verification flows
 
-- **User Management**: Automatic profile creation, role-based permissions
+### By Your Migration:
+- **User Management**: Profiles, roles, metadata tables with automatic triggers
 - **Admin System**: User invitations, audit logging, admin dashboard access
 - **App Settings**: Configurable app name, logo, and branding
-- **Email System**: User-configurable email settings (requires Resend.com)
+- **Email System**: User-configurable email settings storage
 - **Security**: Row Level Security (RLS) policies on all tables
+- **Helper Functions**: `update_user_role()` for admin operations
 
 ## Troubleshooting
 
@@ -135,30 +101,56 @@ This schema creates:
 - Make sure you're running this in a Supabase project, not a regular Postgres database
 - The `auth` schema is automatically created by Supabase
 
+### npm run setup:users fails
+- Check that `SUPABASE_SERVICE_ROLE_KEY` is set correctly in `.env.local`
+- Verify your Supabase project URL is correct
+- Make sure the migration has been run first
+
 ### Admin link doesn't appear
-- Check that your user's role is set to 'admin' in the `user_roles` table
-- Make sure `SUPABASE_SERVICE_ROLE_KEY` is set in your `.env.local`
+- The `setup:users` script should automatically set admin role
+- If not, manually check the `user_roles` table in Table Editor
+- Ensure `SUPABASE_SERVICE_ROLE_KEY` is set in `.env.local`
 
 ### Can't sign in
 - Verify your Supabase URL and anon key are correct in `.env.local`
-- Check that the user exists in Authentication → Users
-- Ensure the email is confirmed (should show green badge)
+- Check that users exist in Authentication → Users
+- Ensure emails show as confirmed (green badge)
+
+## Manual User Creation (Alternative)
+
+If you prefer to create users manually instead of using the script:
+
+1. **Create user in Dashboard:**
+   - Go to Authentication → Users
+   - Click "Add user" → "Create new user"
+   - Enter email, password, check "Auto Confirm Email"
+
+2. **Set admin role via SQL:**
+   ```sql
+   -- Use the RPC function to update role (bypasses RLS)
+   SELECT update_user_role(
+     (SELECT id FROM auth.users WHERE email = 'your-email@example.com'),
+     'admin'
+   );
+   ```
 
 ## Next Steps
 
-1. Configure your application settings in Admin → Settings
-2. Invite team members through Admin → Users → Invite
-3. Set up email sending (optional) in Settings → Email Settings
+1. Sign in with your admin account
+2. Configure application settings in Admin → Settings
+3. Invite team members through Admin → Users → Invite
+4. Set up email sending (optional) in Settings → Email Settings
 
 ## Database Schema Overview
 
 ```
 auth.users (Managed by Supabase)
-    ↓ (references)
+    ↓ (triggers on insert)
 profiles - User display information
 user_roles - Permission management (admin/user/moderator)
-user_api_keys - API keys and email settings
 user_metadata - Additional user data
+    ↓ (referenced by)
+user_api_keys - API keys and email settings
 admin_audit_log - Tracks all admin actions
 app_settings - Global app configuration
 ```
